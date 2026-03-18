@@ -1,0 +1,17 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/auth/login/route": "/api/auth/login",
+  "/api/auth/logout/route": "/api/auth/logout",
+  "/api/auth/me/route": "/api/auth/me",
+  "/api/auth/signup/route": "/api/auth/signup",
+  "/api/files/[id]/content/route": "/api/files/[id]/content",
+  "/api/files/[id]/route": "/api/files/[id]",
+  "/api/files/route": "/api/files",
+  "/api/files/upload/route": "/api/files/upload",
+  "/api/sorted/files/route": "/api/sorted/files",
+  "/api/sorted/folders/route": "/api/sorted/folders",
+  "/api/upload/route": "/api/upload",
+  "/folders/page": "/folders",
+  "/page": "/"
+}

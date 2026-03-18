@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/auth/logout": {},
+    "/api/auth/me": {},
+    "/api/files": {},
+    "/api/files/[id]": {},
+    "/api/files/[id]/content": {},
+    "/api/files/upload": {}
+  }
+}

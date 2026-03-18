@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 46, "column": 0}, "map": {"version":3,"sources":["file:///media/krrish/Linux%20Partition/DocSort/app/api/auth/logout/route.ts"],"sourcesContent":["import { NextResponse } from 'next/server';\n\nexport const runtime = 'nodejs';\n\nexport async function POST() {\n  const res = NextResponse.json({ success: true }, { status: 200 });\n  res.cookies.set('docsort_token', '', {\n    httpOnly: true,\n    sameSite: 'lax',\n    secure: process.env.NODE_ENV === 'production',\n    path: '/',\n    maxAge: 0,\n  });\n  return res;\n}\n"],"names":[],"mappings":";;;;;;AAAA;;AAEO,MAAM,UAAU;AAEhB,eAAe;IACpB,MAAM,MAAM,gJAAY,CAAC,IAAI,CAAC;QAAE,SAAS;IAAK,GAAG;QAAE,QAAQ;IAAI;IAC/D,IAAI,OAAO,CAAC,GAAG,CAAC,iBAAiB,IAAI;QACnC,UAAU;QACV,UAAU;QACV,QAAQ,oDAAyB;QACjC,MAAM;QACN,QAAQ;IACV;IACA,OAAO;AACT"}}]
-}

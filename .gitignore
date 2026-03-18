@@ -1,2 +1,21 @@
-node_modules
+# Next.js
+.next/
+out/
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# Env
 .env*
+
+# Build
+dist/
+
+# OS
+.DS_Store
+
+# Your heavy files (IMPORTANT)
+public/sorted/

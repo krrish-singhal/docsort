@@ -13,6 +13,14 @@ export const runtime = "nodejs";
 const GUEST_COOKIE = "docsort_guest";
 const GUEST_MAX_AGE_SECONDS = 60 * 60 * 24; // 24h
 
+function isHttpsRequest(req: NextRequest): boolean {
+  const forwarded = req.headers.get("x-forwarded-proto");
+  const proto = (
+    forwarded?.split(",")[0]?.trim() || req.nextUrl.protocol
+  ).replace(":", "");
+  return proto === "https";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const debug = process.env.DOCSORT_DEBUG === "1";
@@ -145,7 +153,7 @@ export async function POST(req: NextRequest) {
       res.cookies.set(GUEST_COOKIE, guestId, {
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: isHttpsRequest(req),
         path: "/",
         maxAge: GUEST_MAX_AGE_SECONDS,
       });

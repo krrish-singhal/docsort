@@ -7,6 +7,14 @@ import { FileModel } from "@/src/models/File";
 
 const GUEST_COOKIE = "docsort_guest";
 
+function isHttpsRequest(req: NextRequest): boolean {
+  const forwarded = req.headers.get("x-forwarded-proto");
+  const proto = (
+    forwarded?.split(",")[0]?.trim() || req.nextUrl.protocol
+  ).replace(":", "");
+  return proto === "https";
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.JWT_SECRET) {
@@ -80,7 +88,7 @@ export async function POST(req: NextRequest) {
     res.cookies.set("docsort_token", token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttpsRequest(req),
       path: "/",
       maxAge: 60 * 60,
     });
@@ -89,7 +97,7 @@ export async function POST(req: NextRequest) {
       res.cookies.set(GUEST_COOKIE, "", {
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: isHttpsRequest(req),
         path: "/",
         maxAge: 0,
       });

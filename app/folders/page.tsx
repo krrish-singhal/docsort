@@ -122,7 +122,9 @@ export default function FoldersPage() {
               Organized Folders
             </h1>
             <p className="text-sm text-gray-600">
-              Sign in to view your folders
+              {unauthorized
+                ? "Sign in to view your folders"
+                : "Browse your uploaded files"}
             </p>
           </div>
           <Button asChild variant="outline">

@@ -10,8 +10,17 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Eye, EyeOff } from "lucide-react";
+
+const AUTH_CHANGED_EVENT = "docsort-auth-changed";
 
 async function authRequest(path: string, payload: unknown) {
   const res = await fetch(path, {
@@ -45,6 +54,7 @@ export function AuthDialog({
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -52,6 +62,7 @@ export function AuthDialog({
     if (!open) return;
     setMode(defaultMode);
     setError(null);
+    setShowPassword(false);
   }, [open, defaultMode]);
 
   const submit = async () => {
@@ -63,6 +74,8 @@ export function AuthDialog({
       } else {
         await authRequest("/api/auth/login", { email, password });
       }
+
+      window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
       await onAuthed?.();
       onOpenChange(false);
     } catch (e) {
@@ -103,13 +116,25 @@ export function AuthDialog({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="auth-password">Password</Label>
-                  <Input
-                    id="auth-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                  />
+                  <InputGroup>
+                    <InputGroupInput
+                      id="auth-password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        aria-label={
+                          showPassword ? "Hide password" : "Show password"
+                        }
+                        onClick={() => setShowPassword((s) => !s)}
+                      >
+                        {showPassword ? <EyeOff /> : <Eye />}
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  </InputGroup>
                 </div>
               </TabsContent>
 
@@ -136,13 +161,25 @@ export function AuthDialog({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="auth-password2">Password</Label>
-                  <Input
-                    id="auth-password2"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="new-password"
-                  />
+                  <InputGroup>
+                    <InputGroupInput
+                      id="auth-password2"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        aria-label={
+                          showPassword ? "Hide password" : "Show password"
+                        }
+                        onClick={() => setShowPassword((s) => !s)}
+                      >
+                        {showPassword ? <EyeOff /> : <Eye />}
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  </InputGroup>
                   <p className="text-xs text-muted-foreground">
                     Minimum 8 characters.
                   </p>

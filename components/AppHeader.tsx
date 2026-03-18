@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, User } from "lucide-react";
 
+const AUTH_CHANGED_EVENT = "docsort-auth-changed";
+
 type MeResponse =
   | { success: true; user: { id: string; email: string; name: string } }
   | { success: false; error: string };
@@ -50,11 +52,20 @@ export function AppHeader() {
     void refreshMe();
   }, [refreshMe]);
 
+  React.useEffect(() => {
+    const handler = () => {
+      void refreshMe();
+    };
+    window.addEventListener(AUTH_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(AUTH_CHANGED_EVENT, handler);
+  }, [refreshMe]);
+
   const logout = async () => {
     await fetch("/api/auth/logout", {
       method: "POST",
       credentials: "include",
     }).catch(() => null);
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
     await refreshMe();
     router.refresh();
     if (pathname !== "/") router.push("/");

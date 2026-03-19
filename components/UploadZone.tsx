@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Upload, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { AuthDialog } from "@/components/AuthDialog";
@@ -20,11 +21,35 @@ type UploadApiResponse =
   | { success: true; file: UploadedFile }
   | { success: false; error: string };
 
+type CloudinarySignatureResponse =
+  | {
+      success: true;
+      cloudName: string;
+      apiKey: string;
+      timestamp: number;
+      folder: string;
+      signature: string;
+      resourceType: string;
+      useFilename: boolean;
+      uniqueFilename: boolean;
+    }
+  | { success: false; error: string };
+
 interface UploadZoneProps {
   onUploadComplete?: (result: unknown) => void;
 }
 
 export function UploadZone({ onUploadComplete }: UploadZoneProps) {
+  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
+  const normalizeUploadError = (message: string): string => {
+    // Hide vendor-specific copy and show a clean limit message.
+    if (/file size too large|maximum is|upgrade your plan|file[- ]?limit/i.test(message)) {
+      return "File size is too large. Max 10MB allowed.";
+    }
+    return message;
+  };
+
   const router = useRouter();
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,7 +95,40 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
     }
   };
 
-  const uploadOne = async (file: File): Promise<UploadedFile> => {
+  const parseUploadApiResponse = async (
+    response: Response,
+  ): Promise<UploadApiResponse> => {
+    const raw = await response.text();
+    let parsed: unknown = null;
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+    }
+
+    const data: UploadApiResponse | null =
+      parsed &&
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "success" in parsed
+        ? (parsed as UploadApiResponse)
+        : null;
+
+    if (data) return data;
+    // Non-JSON response
+    return {
+      success: false,
+      error: raw?.trim() || response.statusText || "Upload failed",
+    };
+  };
+
+  const isEntityTooLarge = (message: string): boolean => {
+    return /request entity too large|payload too large|too large/i.test(message);
+  };
+
+  const uploadMultipart = async (file: File): Promise<UploadedFile> => {
     const formData = new FormData();
     formData.append("file", file);
 
@@ -80,31 +138,133 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
       credentials: "include",
     });
 
-    const data: UploadApiResponse = await response.json();
-
+    const data = await parseUploadApiResponse(response);
     if (!response.ok || !data.success) {
+      const errorMessage = !data.success ? data.error : "Upload failed";
+      throw new Error(errorMessage || "Upload failed");
+    }
+    return data.file;
+  };
+
+  const uploadViaCloudinary = async (file: File): Promise<UploadedFile> => {
+    const sigRes = await fetch("/api/files/upload/signature", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    const sigRaw = await sigRes.text();
+    let sigParsed: CloudinarySignatureResponse | null = null;
+    try {
+      sigParsed = JSON.parse(sigRaw) as CloudinarySignatureResponse;
+    } catch {
+      sigParsed = null;
+    }
+
+    if (!sigRes.ok || !sigParsed || !sigParsed.success) {
       throw new Error(
-        (data as { success: false; error: string }).error || "Upload failed",
+        (sigParsed && !sigParsed.success
+          ? sigParsed.error
+          : "Unable to start upload") || "Unable to start upload",
       );
     }
 
-    return (data as { success: true; file: UploadedFile }).file;
+    const cloudForm = new FormData();
+    cloudForm.append("file", file);
+    cloudForm.append("api_key", sigParsed.apiKey);
+    cloudForm.append("timestamp", String(sigParsed.timestamp));
+    cloudForm.append("signature", sigParsed.signature);
+    cloudForm.append("folder", sigParsed.folder);
+    cloudForm.append("use_filename", sigParsed.useFilename ? "true" : "false");
+    cloudForm.append(
+      "unique_filename",
+      sigParsed.uniqueFilename ? "true" : "false",
+    );
+
+    const cloudUrl = `https://api.cloudinary.com/v1_1/${encodeURIComponent(
+      sigParsed.cloudName,
+    )}/${encodeURIComponent(sigParsed.resourceType)}/upload`;
+
+    const cloudRes = await fetch(cloudUrl, {
+      method: "POST",
+      body: cloudForm,
+    });
+
+    const cloudJson = (await cloudRes
+      .json()
+      .catch(() => null)) as
+      | {
+          secure_url?: string;
+          public_id?: string;
+          error?: { message?: string };
+        }
+      | null;
+
+    if (!cloudRes.ok || !cloudJson?.secure_url || !cloudJson.public_id) {
+      const message = normalizeUploadError(
+        cloudJson?.error?.message || "Cloud upload failed",
+      );
+      throw new Error(message);
+    }
+
+    const finalizeRes = await fetch("/api/files/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        fileUrl: cloudJson.secure_url,
+        cloudinaryPublicId: cloudJson.public_id,
+        fileName: file.name,
+        mimeType: file.type,
+        size: file.size,
+      }),
+    });
+
+    const data = await parseUploadApiResponse(finalizeRes);
+    if (!finalizeRes.ok || !data.success) {
+      const message = !data.success ? data.error : "Upload failed";
+      throw new Error(message || "Upload failed");
+    }
+
+    return data.file;
   };
 
   const uploadFile = async (file: File) => {
-    setIsLoading(true);
     setError(null);
     setUploadResult(null);
 
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      toast.error("File size is too large. Max 10MB allowed.");
+      return;
+    }
+
+    setIsLoading(true);
+
     try {
-      const result = await uploadOne(file);
+      // Prefer multipart for small files; fall back to direct-to-Cloudinary when
+      // production request-body limits (often 413) block uploads.
+      let result: UploadedFile;
+      if (file.size > 4_000_000) {
+        result = await uploadViaCloudinary(file);
+      } else {
+        try {
+          result = await uploadMultipart(file);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "";
+          if (isEntityTooLarge(msg)) {
+            result = await uploadViaCloudinary(file);
+          } else {
+            throw e;
+          }
+        }
+      }
       setUploadResult(result);
       onUploadComplete?.(result);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "An error occurred";
 
-      setError(errorMessage);
+      toast.error(normalizeUploadError(errorMessage));
     } finally {
       setIsLoading(false);
     }

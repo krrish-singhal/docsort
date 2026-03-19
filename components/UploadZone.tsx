@@ -44,7 +44,11 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
 
   const normalizeUploadError = (message: string): string => {
     // Hide vendor-specific copy and show a clean limit message.
-    if (/file size too large|maximum is|upgrade your plan|file[- ]?limit/i.test(message)) {
+    if (
+      /file size too large|maximum is|upgrade your plan|file[- ]?limit/i.test(
+        message,
+      )
+    ) {
       return "File size is too large. Max 10MB allowed.";
     }
     return message;
@@ -125,7 +129,9 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
   };
 
   const isEntityTooLarge = (message: string): boolean => {
-    return /request entity too large|payload too large|too large/i.test(message);
+    return /request entity too large|payload too large|too large/i.test(
+      message,
+    );
   };
 
   const uploadMultipart = async (file: File): Promise<UploadedFile> => {
@@ -190,15 +196,11 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
       body: cloudForm,
     });
 
-    const cloudJson = (await cloudRes
-      .json()
-      .catch(() => null)) as
-      | {
-          secure_url?: string;
-          public_id?: string;
-          error?: { message?: string };
-        }
-      | null;
+    const cloudJson = (await cloudRes.json().catch(() => null)) as {
+      secure_url?: string;
+      public_id?: string;
+      error?: { message?: string };
+    } | null;
 
     if (!cloudRes.ok || !cloudJson?.secure_url || !cloudJson.public_id) {
       const message = normalizeUploadError(

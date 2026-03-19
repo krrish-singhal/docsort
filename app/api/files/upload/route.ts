@@ -101,15 +101,13 @@ export async function POST(req: NextRequest) {
     let uploadResult: { secure_url: string; public_id: string } | null = null;
 
     if (contentType.includes("application/json")) {
-      const body = (await req.json().catch(() => null)) as
-        | {
-            fileUrl?: string;
-            cloudinaryPublicId?: string;
-            fileName?: string;
-            mimeType?: string;
-            size?: number;
-          }
-        | null;
+      const body = (await req.json().catch(() => null)) as {
+        fileUrl?: string;
+        cloudinaryPublicId?: string;
+        fileName?: string;
+        mimeType?: string;
+        size?: number;
+      } | null;
 
       if (
         !body?.fileUrl ||

@@ -59,7 +59,10 @@ export async function GET(req: NextRequest) {
 
     // Import lazily to avoid configuring Cloudinary globally in edge runtimes.
     const { v2: cloudinary } = await import("cloudinary");
-    const signature = cloudinary.utils.api_sign_request(paramsToSign, apiSecret);
+    const signature = cloudinary.utils.api_sign_request(
+      paramsToSign,
+      apiSecret,
+    );
 
     const res = NextResponse.json(
       {

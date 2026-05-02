@@ -1,6 +1,54 @@
 import { DocumentCategory, ClassificationResult } from "@/lib/types";
 import Groq from "groq-sdk";
 
+// ─── Ollama (offline / local LLM) ─────────────────────────────────────────────
+
+async function classifyWithOllama(text: string): Promise<ClassificationResult> {
+  const baseUrl =
+    process.env.OLLAMA_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:11434";
+  const model = process.env.OLLAMA_MODEL ?? "llama3";
+
+  const truncatedText = text.slice(0, 5000);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        options: { temperature: 0, num_predict: 160 },
+        messages: [
+          {
+            role: "user",
+            content: `${CLASSIFICATION_PROMPT}\n\nDocument text:\n${truncatedText}`,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return fallbackResult(`Ollama error ${response.status}: ${err}`);
+    }
+
+    const json = (await response.json()) as { message?: { content?: string } };
+    const responseText = json.message?.content?.trim() ?? "";
+    const parsed = parseAiJson(responseText);
+    const category = parsed.confidence <= 0.55 ? "Others" : parsed.category;
+
+    return {
+      category,
+      confidence: clampConfidence(parsed.confidence),
+      mode: "ai",
+      reasoning: parsed.reasoning ?? `Ollama classified as ${category}`,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return fallbackResult(`Ollama unavailable (${msg})`);
+  }
+}
+
 const CLASSIFICATION_PROMPT = `You are a document classification expert.
 
 Classify the provided document into exactly one of these categories:
@@ -46,7 +94,6 @@ function normalizeCategory(value: unknown): DocumentCategory {
   const exact = VALID_CATEGORIES.find((c) => c.toLowerCase() === lower);
   if (exact) return exact;
 
-  // Common synonyms
   if (lower.includes("receipt")) return "Finance";
   if (lower.includes("invoice")) return "Invoices";
   if (lower.includes("document") || lower.includes("general"))
@@ -158,70 +205,88 @@ function fallbackResult(reasoning: string): ClassificationResult {
 export async function classifyWithAI(
   text: string,
 ): Promise<ClassificationResult> {
-  const apiKey = process.env.GROQ_API_KEY;
+  const provider = process.env.AI_PROVIDER ?? "auto";
 
-  // If Groq isn't configured, silently fall back.
-  if (!apiKey) return fallbackResult("AI disabled (GROQ_API_KEY not set)");
-
-  try {
-    const client = new Groq({ apiKey });
-
-    // Truncate text to avoid exceeding token limits
-    const truncatedText = text.slice(0, 5000);
-
-    const modelsToTry = uniqueStrings([
-      process.env.GROQ_MODEL,
-      // Current Groq defaults (avoid decommissioned models)
-      "llama-3.1-8b-instant",
-      "llama-3.1-70b-versatile",
-      // Back-compat fallbacks
-      "llama3-8b-8192",
-      "llama3-70b-8192",
-    ]);
-
-    let lastError: unknown = null;
-    for (const model of modelsToTry) {
-      try {
-        debugLog("[classifier] Groq model attempt:", model);
-        const completion = await client.chat.completions.create({
-          model,
-          max_tokens: 160,
-          temperature: 0,
-          messages: [
-            {
-              role: "user",
-              content: `${CLASSIFICATION_PROMPT}\n\nDocument text:\n${truncatedText}`,
-            },
-          ],
-        });
-
-        const responseText =
-          completion.choices?.[0]?.message?.content?.trim() ?? "";
-        const parsed = parseAiJson(responseText);
-        const category = parsed.confidence <= 0.55 ? "Others" : parsed.category;
-        const confidence = clampConfidence(parsed.confidence);
-
-        return {
-          category,
-          confidence,
-          mode: "ai",
-          reasoning: parsed.reasoning ?? `Groq classified as ${category}`,
-        };
-      } catch (err) {
-        lastError = err;
-        // If the model itself is the problem, try the next one.
-        if (isModelError(err)) continue;
-
-        // Non-model errors (rate limits, connectivity, etc.) shouldn't spam retries.
-        break;
-      }
-    }
-
-    const msg =
-      lastError instanceof Error ? lastError.message : "Unknown error";
-    return fallbackResult(`AI fallback (${msg})`);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown error";
-    return fallbackResult(`AI fallback (${msg})`);
+  if (provider === "ollama") {
+    return classifyWithOllama(text);
   }
+
+  const apiKey = process.env.GROQ_API_KEY;
+  if (provider === "groq" || (provider === "auto" && apiKey)) {
+    if (!apiKey) return fallbackResult("AI disabled (GROQ_API_KEY not set)");
+
+    try {
+      const client = new Groq({ apiKey });
+      const truncatedText = text.slice(0, 5000);
+
+      const modelsToTry = uniqueStrings([
+        process.env.GROQ_MODEL,
+        "llama-3.1-8b-instant",
+        "llama-3.1-70b-versatile",
+        "llama3-8b-8192",
+        "llama3-70b-8192",
+      ]);
+
+      let lastError: unknown = null;
+      for (const model of modelsToTry) {
+        try {
+          debugLog("[classifier] Groq model attempt:", model);
+          const completion = await client.chat.completions.create({
+            model,
+            max_tokens: 160,
+            temperature: 0,
+            messages: [
+              {
+                role: "user",
+                content: `${CLASSIFICATION_PROMPT}\n\nDocument text:\n${truncatedText}`,
+              },
+            ],
+          });
+
+          const responseText =
+            completion.choices?.[0]?.message?.content?.trim() ?? "";
+          const parsed = parseAiJson(responseText);
+          const category =
+            parsed.confidence <= 0.55 ? "Others" : parsed.category;
+          const confidence = clampConfidence(parsed.confidence);
+
+          return {
+            category,
+            confidence,
+            mode: "ai",
+            reasoning: parsed.reasoning ?? `Groq classified as ${category}`,
+          };
+        } catch (err) {
+          lastError = err;
+          if (isModelError(err)) continue;
+          break;
+        }
+      }
+
+      const ollamaUrl =
+        (process.env.OLLAMA_BASE_URL?.replace(/\/$/, "") ??
+          "http://localhost:11434") + "/api/tags";
+      const ollamaAvailable = await fetch(ollamaUrl, {
+        signal: AbortSignal.timeout(1500),
+      })
+        .then((r) => r.ok)
+        .catch(() => false);
+
+      if (ollamaAvailable) {
+        debugLog("[classifier] Groq failed, falling back to Ollama");
+        return classifyWithOllama(text);
+      }
+
+      const msg =
+        lastError instanceof Error ? lastError.message : "Unknown error";
+      return fallbackResult(`AI fallback (${msg})`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Unknown error";
+      return fallbackResult(`AI fallback (${msg})`);
+    }
+  }
+
+  return fallbackResult(
+    "No AI provider configured (set AI_PROVIDER or GROQ_API_KEY)",
+  );
 }

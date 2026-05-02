@@ -243,17 +243,18 @@ export function UploadZone({ onUploadComplete }: UploadZoneProps) {
     setIsLoading(true);
 
     try {
-      // Prefer multipart for small files; fall back to direct-to-Cloudinary when
-      // production request-body limits (often 413) block uploads.
+      // In local/offline storage mode always use multipart (no Cloudinary).
+      const isLocalStorage = process.env.NEXT_PUBLIC_STORAGE_MODE === "local";
+
       let result: UploadedFile;
-      if (file.size > 4_000_000) {
+      if (!isLocalStorage && file.size > 4_000_000) {
         result = await uploadViaCloudinary(file);
       } else {
         try {
           result = await uploadMultipart(file);
         } catch (e) {
           const msg = e instanceof Error ? e.message : "";
-          if (isEntityTooLarge(msg)) {
+          if (!isLocalStorage && isEntityTooLarge(msg)) {
             result = await uploadViaCloudinary(file);
           } else {
             throw e;

@@ -1,256 +1,115 @@
-# Document Organizer - AI-Powered File Classification System
+# DocSort
 
-An intelligent document management system that automatically classifies and organizes documents using hybrid AI classification (rule-based + Groq LLM).
+AI-powered document classification and organiser. Upload PDFs, DOCX, or images — files are automatically sorted into categories (Invoices, Finance, Medical Reports, Legal, Academic, Personal, Others).
 
-## Features
+Supports two modes:
+- **Online** — MongoDB Atlas + Cloudinary storage + Groq API
+- **Offline** — local MongoDB + filesystem storage + Ollama
 
-- **Drag & Drop Upload**: Easy file upload with visual feedback
-- **Multi-Format Support**: PDF, DOCX, images (JPEG, PNG, WebP, TIFF), and text files
-- **Intelligent Classification**: Hybrid approach using:
-  - Rule-based classification for instant high-confidence categorization
-  - Groq AI for uncertain cases or additional accuracy
-- **8 Document Categories**:
-  - Invoices
-  - Finance Documents
-  - Medical Reports
-  - Legal Documents
-  - Academic Papers
-  - Receipts
-  - Personal Documents
-  - Others
+---
 
-- **Real-Time Processing**: Live progress tracking and extraction feedback
-- **Confidence Scoring**: See classification confidence levels
-- **Automatic Organization**: Files automatically organized into category folders
+## Prerequisites
 
-## Getting Started
+| Tool | Minimum version |
+|------|----------------|
+| Node.js | 18+ |
+| pnpm | 8+ (`npm i -g pnpm`) |
+| MongoDB | Atlas cluster **or** local `mongod` |
+| (Online) Cloudinary account | free tier works |
+| (Online) Groq API key | [console.groq.com](https://console.groq.com) |
+| (Offline) Ollama | [ollama.com/download](https://ollama.com/download) |
 
-### Prerequisites
+---
 
-- Node.js 18+ and npm/pnpm
-- Groq API Key (free at https://console.groq.com)
+## 1 — Clone & install
 
-### Installation
-
-1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd document-organizer
-```
-
-2. Install dependencies:
-```bash
+git clone <repo-url> docsort
+cd docsort
 pnpm install
 ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env.local
+---
+
+## 2 — Environment
+
+Create `.env.local` in the project root.
+
+### Online (MongoDB Atlas + Cloudinary + Groq)
+
+```env
+MONGODB_URI=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/docsort
+
+STORAGE_MODE=cloud
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
+NEXT_PUBLIC_STORAGE_MODE=cloud
+
+AI_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+
+JWT_SECRET=<random-32-char-string>
 ```
 
-4. Add your Groq API key to `.env.local`:
-```
-GROQ_API_KEY=your_api_key_here
-```
+> **MongoDB Atlas**: add your machine's IP to the Atlas allowlist (Network Access tab).
 
-### Running Locally
+### Offline (local MongoDB + filesystem + Ollama)
 
-```bash
-pnpm dev
-```
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/docsort
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+STORAGE_MODE=local
+NEXT_PUBLIC_STORAGE_MODE=local
 
-## Project Structure
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3
 
-```
-├── app/
-│   ├── page.tsx              # Main page
-│   ├── layout.tsx            # Root layout
-│   └── api/
-│       └── upload/
-│           └── route.ts      # Upload API endpoint
-├── components/
-│   ├── UploadZone.tsx        # Main drag-drop component
-│   └── UploadResults.tsx     # Results display
-├── lib/
-│   ├── types/
-│   │   └── index.ts          # TypeScript types
-│   ├── services/
-│   │   ├── extractors/       # Text extraction services
-│   │   │   ├── pdfExtractor.ts
-│   │   │   ├── docxExtractor.ts
-│   │   │   └── index.ts
-│   │   ├── classifier/       # Classification services
-│   │   │   ├── ruleClassifier.ts
-│   │   │   ├── aiClassifier.ts
-│   │   │   └── index.ts
-│   │   └── fileManager.ts    # File organization
-│   └── utils/
-│       └── fileUtils.ts      # File utilities
-└── public/                   # Static assets
+JWT_SECRET=<random-32-char-string>
 ```
 
-## How It Works
+---
 
-### 1. File Upload
-User selects or drags files into the upload zone. The system validates file type and size.
+## 3 — Start dependencies (offline mode only)
 
-### 2. Text Extraction
-Depending on file type:
-- **PDF**: Uses pdf-parse with fallback to OCR (tesseract.js)
-- **DOCX**: Uses mammoth
-- **Images**: Uses tesseract.js for OCR
-- **Text**: Direct text reading
-
-### 3. Classification (Hybrid Approach)
-1. **Rules First**: Fast rule-based classification using keywords
-   - If confidence ≥ 0.8, classification is complete
-   - Otherwise, proceeds to AI classification
-2. **AI Fallback**: Groq API for uncertain cases
-   - Uses strict classification prompt
-   - Returns category with high confidence
-
-### 4. File Organization
-Classified files are automatically organized into:
-```
-sorted/
-├── Invoices/
-├── Finance/
-├── Medical Reports/
-├── Legal/
-├── Academic/
-├── Receipts/
-├── Personal Documents/
-└── Others/
-```
-
-## API Endpoints
-
-### POST `/api/upload`
-
-Upload and classify a document.
-
-**Request:**
-```bash
-curl -X POST http://localhost:3000/api/upload \
-  -F "file=@document.pdf"
-```
-
-**Response:**
-```json
-{
-  "filename": "document.pdf",
-  "category": "Invoices",
-  "confidence": 0.95,
-  "mode": "rules",
-  "originalPath": "/uploads/document.pdf",
-  "organizedPath": "/sorted/Invoices/document.pdf"
-}
-```
-
-## Configuration
-
-### Supported File Types
-- **PDF**: `application/pdf`
-- **DOCX**: `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
-- **Images**: `image/jpeg`, `image/png`, `image/webp`, `image/tiff`
-- **Text**: `text/plain`
-
-### Maximum File Size
-- 50MB per file
-
-### Classification Categories
-Defined in `lib/services/classifier/ruleClassifier.ts` with keyword patterns for each category.
-
-## Deployment
-
-### Deploy to Vercel
+**MongoDB**
 
 ```bash
-vercel
+# Ubuntu/Debian
+sudo systemctl start mongod
+
+# macOS (Homebrew)
+brew services start mongodb-community
 ```
 
-Ensure environment variables are set in Vercel project settings:
-- `GROQ_API_KEY`: Your Groq API key
+**Ollama**
 
-### Environment Variables
-
-Create `.env.local` with:
-```
-GROQ_API_KEY=your_groq_api_key_here
+```bash
+ollama serve            # start the server
+ollama pull llama3      # one-time download (~4 GB)
 ```
 
-## Technology Stack
+---
 
-- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
-- **UI Components**: shadcn/ui
-- **Text Extraction**: 
-  - pdf-parse (PDF text)
-  - mammoth (DOCX)
-  - tesseract.js (OCR for images)
-- **AI Classification**: Groq API (llama3/mixtral)
-- **File Management**: Node.js fs module
+## 4 — Run
 
-## Development
-
-### Add New Classification Category
-
-1. Add keyword patterns to `ruleClassifier.ts`:
-```typescript
-'New Category': {
-  keywords: ['keyword1', 'keyword2'],
-  weight: 1.0,
-}
+```bash
+pnpm dev                        # development → http://localhost:3000
+pnpm build && pnpm start        # production
 ```
 
-2. Update the classifier prompt if needed
+---
 
-3. Test with sample documents
+## Switching modes
 
-### Improve Classification Accuracy
+Edit `STORAGE_MODE`, `NEXT_PUBLIC_STORAGE_MODE`, and `AI_PROVIDER` in `.env.local`, then restart.
 
-- Adjust keyword weights in `ruleClassifier.ts`
-- Modify the Groq prompt in `aiClassifier.ts` (maintaining structure)
-- Monitor confidence scores in upload results
+| Env var | Values |
+|---------|--------|
+| `STORAGE_MODE` | `local` \| `cloud` |
+| `NEXT_PUBLIC_STORAGE_MODE` | same as above |
+| `AI_PROVIDER` | `groq` \| `ollama` \| `auto` |
 
-## Error Handling
-
-- **Unsupported File Type**: Returns error with supported types list
-- **File Too Large**: Returns error with size limit
-- **Extraction Failure**: Gracefully falls back to document name analysis
-- **API Failure**: Rules-based classification used as fallback
-- **Network Issues**: Clear error messages to user
-
-## Performance
-
-- Rule-based classification: < 100ms
-- AI classification: 1-3 seconds (Groq API)
-- Text extraction: 1-5 seconds depending on file size
-- Total processing: 2-8 seconds per document
-
-## Troubleshooting
-
-### GROQ_API_KEY not set error
-1. Verify `.env.local` exists with GROQ_API_KEY
-2. Restart the dev server: `pnpm dev`
-3. Check Vercel settings if deployed
-
-### File not being classified correctly
-1. Check confidence score in results
-2. Verify file content has clear indicators
-3. Review keyword patterns in ruleClassifier.ts
-4. Test with Groq API directly if needed
-
-### OCR not working on images
-1. Verify image is clear and readable
-2. Check file size (should be < 50MB)
-3. Ensure tesseract.js is properly loaded
-
-## License
-
-MIT
-
-## Support
-
-For issues and feature requests, please open an issue on GitHub.
+`auto` tries Groq (when `GROQ_API_KEY` is set), falls back to Ollama, then to rule-based classification.

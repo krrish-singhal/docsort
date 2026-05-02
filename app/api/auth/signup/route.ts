@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
       sameSite: "lax",
       secure: isHttpsRequest(req),
       path: "/",
-      maxAge: 60 * 60,
+      maxAge: 60 * 60 * 24 * 7, // 7 days — matches token expiry
     });
 
     if (guestId) {

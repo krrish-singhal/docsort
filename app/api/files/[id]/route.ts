@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { connectToDatabase, isMongoConnectivityError } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/requestAuth";
-import { getCloudinary } from "@/src/lib/cloudinary";
+import { deleteFile } from "@/src/lib/storage";
 import { FileModel } from "@/src/models/File";
 
 export const runtime = "nodejs";
@@ -155,18 +155,10 @@ export async function DELETE(
       );
     }
 
-    const cloud = getCloudinary();
-    await cloud.uploader
-      .destroy(file.cloudinaryPublicId, { resource_type: "raw" })
-      .catch(async () => {
-        // If raw fails, try auto (Cloudinary sometimes stores PDFs/images as different types)
-        await cloud.uploader
-          .destroy(file.cloudinaryPublicId, { resource_type: "image" })
-          .catch(() => null);
-        await cloud.uploader
-          .destroy(file.cloudinaryPublicId, { resource_type: "video" })
-          .catch(() => null);
-      });
+    // Use storage abstraction — works in both local and Cloudinary mode
+    if (file.cloudinaryPublicId) {
+      await deleteFile(file.cloudinaryPublicId).catch(() => null);
+    }
 
     await FileModel.deleteOne({ _id: id });
 

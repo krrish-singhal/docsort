@@ -1,9 +1,20 @@
 import type { Metadata } from "next";
-import { Analytics } from "@vercel/analytics/next";
+import React from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
+
+// Only import Analytics when not disabled (avoids network calls in offline mode)
+const AnalyticsEnabled = process.env.NEXT_PUBLIC_ANALYTICS_DISABLED !== "true";
+let Analytics: React.ComponentType = () => null;
+if (AnalyticsEnabled) {
+  // Dynamic require so the import is tree-shaken in offline builds
+  const mod = require("@vercel/analytics/next") as {
+    Analytics: React.ComponentType;
+  };
+  Analytics = mod.Analytics;
+}
 
 export const metadata: Metadata = {
   title: "Document Organizer - AI-Powered File Classification",
@@ -35,7 +46,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <AppHeader />

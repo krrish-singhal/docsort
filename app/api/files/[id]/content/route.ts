@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { connectToDatabase, isMongoConnectivityError } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/requestAuth";
 import { FileModel } from "@/src/models/File";
-import { getCloudinary } from "@/src/lib/cloudinary";
+import { getFileBuffer, isLocalStorageMode } from "@/src/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -133,74 +133,69 @@ export async function GET(
       );
     }
 
-    const resourceType = parseCloudinaryResourceType(file.fileUrl);
-    const deliveryType = parseCloudinaryType(file.fileUrl);
-    const cloud = getCloudinary();
-
-    // Use signed delivery URL to support authenticated/private resources.
-    // For public uploads, this still works fine.
-    const signedUrl = cloud.url(file.cloudinaryPublicId, {
-      secure: true,
-      sign_url: true,
-      resource_type: resourceType,
-      type: deliveryType,
-    });
-
-    const tryFetch = async (url: string) => {
-      // Cloudinary can respond differently based on headers; setting Accept helps PDFs.
-      return fetch(url, { cache: "no-store", headers: { Accept: "*/*" } });
-    };
-
-    let upstream = await tryFetch(signedUrl);
-    if (
-      (!upstream.ok || !upstream.body) &&
-      file.fileUrl &&
-      file.fileUrl !== signedUrl
-    ) {
-      upstream = await tryFetch(file.fileUrl);
-    }
-
-    // If delivery endpoints are protected (often 401/403), fall back to Cloudinary's signed download URL.
-    if (
-      (!upstream.ok || !upstream.body) &&
-      (upstream.status === 401 || upstream.status === 403)
-    ) {
-      const format = extensionFromFilename(file.fileName) ?? "bin";
-      const privateDownloadUrl = cloud.utils.private_download_url(
-        file.cloudinaryPublicId,
-        format,
-        {
-          resource_type: resourceType,
-          type: deliveryType,
-          attachment: false,
-        },
+    // ── Local storage mode: serve file directly from public/uploads ──────────
+    // In local mode the fileUrl is already a web-accessible path like /uploads/…
+    // We serve it via a redirect so the browser (or download client) fetches it
+    // directly from Next.js static file serving — no buffer copy needed.
+    if (isLocalStorageMode()) {
+      const localUrl = file.fileUrl;
+      const contentType = contentTypeForFilename(
+        file.fileName,
+        file.mimeType ?? null,
       );
+      const disposition = dispositionForFilename(file.fileName);
 
-      const third = await tryFetch(privateDownloadUrl);
-      if (third.ok && third.body) {
-        upstream = third;
+      // If available, stream from disk for correctness; fall back to redirect.
+      try {
+        const { buffer } = await getFileBuffer(
+          file.cloudinaryPublicId ?? localUrl,
+          localUrl,
+        );
+        const headers = new Headers();
+        headers.set("Content-Type", contentType);
+        headers.set(
+          "Content-Disposition",
+          `${disposition}; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
+        );
+        headers.set("Cache-Control", "no-store");
+        headers.set("Content-Length", String(buffer.byteLength));
+        return new NextResponse(new Uint8Array(buffer), {
+          status: 200,
+          headers,
+        });
+      } catch {
+        // Couldn't read from disk — redirect to static asset
+        return NextResponse.redirect(new URL(localUrl, req.nextUrl.origin));
       }
     }
 
-    if (!upstream.ok || !upstream.body) {
-      const status = upstream.status;
-      const detail = `Upstream fetch failed (${status}).`;
-      if (debug) {
-        console.error("[api/files/:id/content] upstream fetch failed", {
-          status,
-          signedUrl,
-          fileUrl: file.fileUrl,
-        });
-      }
+    // ── Cloud storage mode: fetch from Cloudinary ──────────────────────────────
+    const storageKey = file.cloudinaryPublicId;
+    if (!storageKey) {
       return NextResponse.json(
-        { success: false, error: "Failed to fetch file content", detail },
+        { success: false, error: "No storage key" },
+        { status: 404 },
+      );
+    }
+
+    let fileBuffer: Buffer;
+    let upstreamContentType: string | undefined;
+    try {
+      const result = await getFileBuffer(storageKey, file.fileUrl ?? "");
+      fileBuffer = result.buffer;
+      upstreamContentType = result.contentType;
+    } catch (err) {
+      if (debug)
+        console.error("[api/files/:id/content] getFileBuffer failed", err);
+      return NextResponse.json(
+        { success: false, error: "Failed to fetch file content" },
         { status: 502, headers: { "Cache-Control": "no-store" } },
       );
     }
 
     const contentType = contentTypeForFilename(
       file.fileName,
-      upstream.headers.get("content-type") ?? file.mimeType ?? null,
+      upstreamContentType ?? file.mimeType ?? null,
     );
     const disposition = dispositionForFilename(file.fileName);
 
@@ -211,11 +206,12 @@ export async function GET(
       `${disposition}; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
     );
     headers.set("Cache-Control", "no-store");
+    headers.set("Content-Length", String(fileBuffer.byteLength));
 
-    const len = upstream.headers.get("content-length");
-    if (len) headers.set("Content-Length", len);
-
-    return new NextResponse(upstream.body, { status: 200, headers });
+    return new NextResponse(new Uint8Array(fileBuffer), {
+      status: 200,
+      headers,
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return NextResponse.json(

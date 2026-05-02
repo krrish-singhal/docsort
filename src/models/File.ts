@@ -13,7 +13,7 @@ const FileSchema = new Schema(
     guestId: { type: String, required: false, index: true },
     fileName: { type: String, required: true, trim: true },
     fileUrl: { type: String, required: true },
-    cloudinaryPublicId: { type: String, required: true },
+    cloudinaryPublicId: { type: String, required: false }, // storageKey: Cloudinary public_id OR local /uploads/... path
     category: { type: String, required: true },
     uploadedAt: { type: Date, default: Date.now, index: true },
     mimeType: { type: String },

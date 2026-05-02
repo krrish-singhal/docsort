@@ -21,7 +21,7 @@ export async function signAccessToken(payload: JwtPayload): Promise<string> {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("1h")
+    .setExpirationTime("7d") // 7-day expiry — works for both online & offline
     .sign(getJwtSecret());
 }
 

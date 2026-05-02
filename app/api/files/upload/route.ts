@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { connectToDatabase, isMongoConnectivityError } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/requestAuth";
-import { getCloudinary } from "@/src/lib/cloudinary";
+import { uploadFile } from "@/src/lib/storage";
 import { FileModel } from "@/src/models/File";
-import { isCategory, type Category } from "@/src/lib/categories";
+import { normalizeCategory, type Category } from "@/src/lib/categories";
 import { extractText } from "@/lib/services/extractors";
 import { classifyDocument } from "@/lib/services/classifier";
 
@@ -24,44 +24,13 @@ function isPayloadTooLargeError(error: unknown): boolean {
   );
 }
 
-async function downloadCloudinaryAsset(
-  cloud: ReturnType<typeof getCloudinary>,
-  publicId: string,
-): Promise<Buffer> {
-  const expiresAt = Math.floor(Date.now() / 1000) + 60;
-
-  const tryFetch = async (resourceType: "raw" | "image" | "video") => {
-    const url = cloud.url(publicId, {
-      resource_type: resourceType,
-      type: "upload",
-      sign_url: true,
-      secure: true,
-      expires_at: expiresAt,
-    });
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: { Accept: "*/*" },
-    });
-    if (!res.ok) {
-      throw new Error(`Failed to download asset (${resourceType})`);
-    }
-    const ab = await res.arrayBuffer();
-    return Buffer.from(ab);
-  };
-
-  try {
-    return await tryFetch("raw");
-  } catch {
-    // Some assets might be stored under other resource types.
-  }
-
-  try {
-    return await tryFetch("image");
-  } catch {
-    // fallthrough
-  }
-
-  return await tryFetch("video");
+async function downloadAssetFromUrl(url: string): Promise<Buffer> {
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { Accept: "*/*" },
+  });
+  if (!res.ok) throw new Error(`Failed to download asset from ${url}`);
+  return Buffer.from(await res.arrayBuffer());
 }
 
 function isHttpsRequest(req: NextRequest): boolean {
@@ -129,8 +98,7 @@ export async function POST(req: NextRequest) {
         public_id: body.cloudinaryPublicId,
       };
 
-      const cloud = getCloudinary();
-      buffer = await downloadCloudinaryAsset(cloud, body.cloudinaryPublicId);
+      buffer = await downloadAssetFromUrl(body.fileUrl);
     } else {
       let formData: FormData;
       try {
@@ -180,12 +148,7 @@ export async function POST(req: NextRequest) {
       .join("\n\n");
     const classification = await classifyDocument(classificationInput);
 
-    const mappedCategory = mapClassifierCategoryToApiCategory(
-      classification.category,
-    );
-    const category: Category = isCategory(mappedCategory)
-      ? mappedCategory
-      : "Others";
+    const category: Category = normalizeCategory(classification.category);
 
     try {
       await connectToDatabase();
@@ -207,35 +170,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (!uploadResult) {
-      const cloud = getCloudinary();
       const ownerFolder = user ? user.id : `guest/${guestId}`;
-
-      uploadResult = await new Promise<{
-        secure_url: string;
-        public_id: string;
-      }>((resolve, reject) => {
-        const stream = cloud.uploader.upload_stream(
-          {
-            folder: `uploads/${ownerFolder}/${category}`,
-            resource_type: "auto",
-            use_filename: true,
-            unique_filename: true,
-          },
-          (error, result) => {
-            if (error || !result)
-              return reject(error ?? new Error("Cloudinary upload failed"));
-            resolve({
-              secure_url: result.secure_url,
-              public_id: result.public_id,
-            });
-          },
-        );
-        stream.end(buffer);
+      const stored = await uploadFile(buffer, {
+        filename: fileName,
+        mimeType,
+        folder: `${ownerFolder}/${category}`,
       });
-    }
-
-    if (!uploadResult) {
-      throw new Error("Cloudinary upload did not return a result");
+      uploadResult = {
+        secure_url: stored.secureUrl,
+        public_id: stored.publicId,
+      };
     }
 
     const doc = await FileModel.create({
@@ -277,40 +221,14 @@ export async function POST(req: NextRequest) {
 
     return res;
   } catch (error) {
-    if (process.env.DOCSORT_DEBUG === "1")
-      console.error("[files/upload] error", error);
+    // Always log unexpected errors to help diagnose issues
+    console.error(
+      "[files/upload] unhandled error:",
+      error instanceof Error ? error.message : error,
+    );
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 },
     );
-  }
-}
-
-function mapClassifierCategoryToApiCategory(category: string): string {
-  switch (category) {
-    case "Invoices":
-      return "Invoices";
-    case "Finance":
-      return "Finance";
-    case "Receipts":
-      return "Receipts";
-    case "Medical Reports":
-      return "Medical Reports";
-    case "Agreements":
-      return "Legal";
-    case "Legal":
-      return "Legal";
-    case "Academic":
-      return "Academic";
-    case "Personal Documents":
-      return "Personal Documents";
-    case "Personal":
-      return "Personal Documents";
-    case "Others":
-      return "Others";
-    case "Documents":
-      return "Others";
-    default:
-      return "Others";
   }
 }

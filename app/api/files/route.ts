@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase, isMongoConnectivityError } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/requestAuth";
 import { FileModel } from "@/src/models/File";
-import { CATEGORIES, isCategory, type Category } from "@/src/lib/categories";
+import {
+  CATEGORIES,
+  normalizeCategory,
+  type Category,
+} from "@/src/lib/categories";
 
 export const runtime = "nodejs";
 
@@ -44,9 +48,9 @@ export async function GET(req: NextRequest) {
       .lean();
 
     const normalized: FileResponse[] = files.map((f) => {
-      const raw = typeof f.category === "string" ? f.category : "Others";
-      const mapped = raw === "Agreements" ? "Legal" : raw;
-      const safeCategory: Category = isCategory(mapped) ? mapped : "Others";
+      const safeCategory: Category = normalizeCategory(
+        typeof f.category === "string" ? f.category : "Others",
+      );
 
       return {
         id: f._id.toString(),
